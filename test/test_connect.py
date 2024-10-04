@@ -11,7 +11,11 @@ import pynats
 def main():
     a = pynats.NATSClient("localhost", 4222)    
     a.start()
+    a.subscibe("TEST")
+    a.send("TEST", b"test message")
     time.sleep(5)
+    a.unsubscribe("TEST")
+    time.sleep(2)
     a.close()
 
 if __name__ == "__main__":

@@ -1,16 +1,15 @@
 """All transport related things for the NATS Protocol
 """
-from queue import Queue, Full
-
+import contextlib
 import os
 import select
 import socket
 import threading
+from queue import Empty, Full, Queue
 
 
 class Transport:
-
-    def __init__(self, host: str, port: int, queue: Queue) -> None:
+    def __init__(self, host: str, port: int, queue: Queue, send_queue: Queue) -> None:
         self.__socket = None
         self.__host = host
         self.__port = port
@@ -19,7 +18,7 @@ class Transport:
         self.__exit_event = threading.Event()
 
         self.recv_queue = queue
-        self.new_data = threading.Condition()
+        self.send_queue = send_queue
 
     def start(self) -> None:
         self.__socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -41,14 +40,24 @@ class Transport:
     def __thread_socketread(self):
 
         read = self.__socket.recv
+        write = self.__socket.send
         sock = self.__socket
         pipe = self.__close_pipe[0]
         ex = self.__exit_event
         put_queue = self.recv_queue.put
+        suppress_empty = contextlib.suppress(Empty)
+        getSend = self.send_queue.get_nowait
+        doneSend = self.send_queue.task_done
 
         while not ex.is_set():
             try:
-                r,w,e = select.select([sock, pipe], [], [], 30)
+                r, w, e = select.select([sock, pipe], [sock], [], 30)
+                if w:
+                    with suppress_empty:
+                        msg = getSend()
+                        write(msg)
+                        doneSend()
+
                 if not r:
                     continue
                 if pipe in r:

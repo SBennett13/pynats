@@ -6,7 +6,7 @@ import sys
 
 try:
     sys.path.append(os.path.join(os.path.dirname(__file__), "..", "pynats"))
-    import protocol
+    import protocol.wire as protocol
 except ImportError:
     print("Error importing protocol")
     sys.exit(1)
@@ -40,6 +40,44 @@ def test_json() -> None:
     
     for fail in fails:
         print(f"Failed : {fail}")
+
+
+def test_msg():
+    msgs = [
+        "FOO.BAR 9 11\r\nHello World\r\n".encode(),
+        "FOO.BAR 9 GREETING.34 11\r\nHello World\r\n".encode(),
+    ]
+    fails = []
+    for msg in msgs:
+        a = protocol.RE_MSG_BODY.match(msg)
+        if a is None:
+            fails.append(msg)
+            continue
+    if not fails:
+        print("Passed all MSG tests")
+        return
+
+
+def test_hmsg():
+    msgs = [
+        "FOO.BAR 9 34 45\r\nNATS/1.0\r\nFoodGroup: vegetable\r\n\r\nHello World\r\n".encode(),
+        "FOO.BAR 9 BAZ.69 34 45\r\nNATS/1.0\r\nFoodGroup: vegetable\r\n\r\nHello World\r\n".encode(),
+    ]
+    fails = []
+
+    for msg in msgs:
+        a = protocol.RE_HMSG_BODY.match(msg)
+        if a is None:
+            fails.append(msg)
+
+    if not fails:
+        print("Passed all HMSG tests")
+    else:
+        print(f"Failed HMSG tests: {fails}")
+
+
 if __name__ == "__main__":
     test_delimiters()
     test_json()
+    test_msg()
+    test_hmsg()
