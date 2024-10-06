@@ -13,7 +13,7 @@ def main():
     a.start()
     a.subscibe("TEST")
     a.send("TEST", b"test message")
-    time.sleep(5)
+    time.sleep(10)
     a.unsubscribe("TEST")
     time.sleep(2)
     a.close()

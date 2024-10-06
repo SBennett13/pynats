@@ -65,6 +65,7 @@ class Protocol(Thread):
         password: str = "",
         auth_token: str = "",
         use_tls: bool = False,
+        connected: Event = None,
     ) -> None:
         super().__init__()
         self.transport = transport
@@ -72,6 +73,7 @@ class Protocol(Thread):
         self.password = password
         self.auth_token = auth_token
         self.use_tls = use_tls
+        self.got_connect = connected
         self.__close_event = Event()
     
         # Params from the server
@@ -101,23 +103,21 @@ class Protocol(Thread):
         suppressEmpty = contextlib.suppress(Empty)
         while not exit_loop():
             with suppressEmpty:
-                data = getMsg()
+                data: wire.Message = getMsg()
                 doneMsg()
-                a = wire.get_message_type(data)
-                if a is None:
-                    continue
 
                 # No matter what, there should be a handler
-                if a[0] not in self.protocol_handlers:
-                    print(f"Unrecognized protocol message: {a[0]}")
+                if data._type not in self.protocol_handlers:
+                    print(f"Unrecognized protocol message: {data._types}")
                     continue
-                self.protocol_handlers[a[0]](a[1])
+                self.protocol_handlers[data._type](data)
 
         print("Ending NATS Protocol")
         self.transport.close()
 
     def send(self, subject: str, payload: bytes, reply_to: str) -> None:
         msg_b = wire.buildPub(subject, payload, reply_to)
+        print("Queueing PUB")
         self.transport.send_queue.put(msg_b)
 
     def sub(self, subject: str, queue_group: str = None) -> bool:
@@ -142,9 +142,8 @@ class Protocol(Thread):
     # ---------------------------
     # Protocol type handlers
     # ---------------------------
-    def handleProtocolInfo(self, options: bytes) -> None:
-        options_dict = wire.parse_info_options(options)
-        self.info_options = InfoOptions.build(options_dict)
+    def handleProtocolInfo(self, msg: wire.InfoMessage) -> None:
+        self.info_options = InfoOptions.build(msg.options)
 
         # Verify some info
         if self.info_options.auth_required and (
@@ -169,6 +168,7 @@ class Protocol(Thread):
         connect_wire: bytes = wire.build_connect(connect_options)
         print("Sending connect")
         self.transport.send_queue.put(connect_wire)
+        self.got_connect.set()
 
     def handleProtocolPing(self, _) -> None:
         print("Received PING, sending PONG")

@@ -1,7 +1,7 @@
 """Connection wrapper for NATS protocol client"""
 
 from queue import Queue
-
+from threading import Event
 import pynats.protocol.nats as nats_protocol
 import pynats.transport as transport
 
@@ -18,13 +18,16 @@ class NATSClient:
     ) -> None:
         recv_queue = Queue(50)
         send_queue = Queue(50)
+        self.connected = Event()
         self.__transport = transport.Transport(host, port, recv_queue, send_queue)
         self.__nats_protocol = nats_protocol.Protocol(
-            self.__transport, user, password, auth_token, use_tls
+            self.__transport, user, password, auth_token, use_tls, self.connected
         )
 
     def start(self) -> None:
         self.__nats_protocol.start()
+
+        self.connected.wait()
 
     def close(self) -> None:
         self.__nats_protocol.close()

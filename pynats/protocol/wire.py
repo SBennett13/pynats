@@ -1,8 +1,10 @@
 """Manage all things NATS wire protocol related
 """
 
+import dataclasses
 import json
 import re
+from typing import Union
 
 MSG_TYPES = (
     b"INFO",
@@ -34,6 +36,56 @@ RE_HMSG_BODY = re.compile(
     rb"(?P<subject>[a-zA-Z0-9_\.]{1,})[ \t]{1,}(?P<sid>\w){1,}[ \t]{1,}((?P<reply>[a-zA-Z0-9\._]{1,})[ \t]{1,}){0,1}(?P<numhdrbytes>[0-9]{1,})[ \t]{1,}(?P<numbytes>[0-9]{1,})\r\nNATS/1\.0\r\n(?P<hdr>.{0,})\r\n\r\n(?P<payload>.{0,}){0,1}\r\n",
 )
 
+@dataclasses.dataclass
+class Message:
+    _type: bytes
+
+
+@dataclasses.dataclass
+class InfoMessage(Message):
+    options: dict
+
+
+@dataclasses.dataclass
+class MsgMessage(Message):
+    subject: str
+    sid: str
+    payload: bytes
+    reply_to: str
+
+
+def parse_stream(buf: bytearray, parsed_queue):
+    msg_type_match = RE_MESSAGE_TYPE.match(buf)
+    if msg_type_match is None:
+        # If we found nothing, find the next \r\n and trim the front
+        first_end = buf.find(b"\r\n")
+        buf = buf[first_end + 2 :]
+        return
+
+    msg_type = msg_type_match.group("cmd")
+    print(f"SRB {msg_type}")
+    if msg_type == b"INFO":
+        info_msg = parse_info(buf)
+        parsed_queue(info_msg)
+    elif msg_type == b"+OK":
+        buf = buf[msg_type_match.end() :]
+    elif msg_type == b"PING":
+        buf = buf[msg_type_match.end() :]
+        msg = Message(msg_type)
+        parsed_queue(msg)
+    elif msg_type == b"MSG":
+        msg = parseMsg(buf)
+
+
+def parse_info(buf: bytearray) -> Union[Message, None]:
+    # Look after the info for options
+    info_opts = RE_INFO_OPTIONS.match(buf, 5)
+    if info_opts is not None:
+        buf = buf[info_opts.end() :]
+        print(buf)
+        return InfoMessage(b"INFO", json.loads(info_opts.group("options")))
+    else:
+        return None
 
 def get_message_type(raw_msg) -> tuple[bytes, bytes]|None:
     match = RE_MESSAGE_TYPE.match(raw_msg)
@@ -95,22 +147,24 @@ def parse_info_options(options: bytes) -> dict:
     return json.loads(options_text.group("options"))
 
 
-def parseMsg(body: bytes) -> dict:
-    parsed = RE_MSG_BODY.match(body)
+def parseMsg(buf: bytearray) -> dict:
+    parsed = RE_MSG_BODY.match(buf, 4)
     if parsed is None:
         return None
 
-    msg_content = {
-        "subject": parsed.group("subject").decode(),
-        "sid": parsed.group("sid").decode(),
-        "num_bytes": int(parsed.group("numbytes").decode()),
-        "payload": parsed.group("payload"),
-    }
+    msg = MsgMessage(
+        "MSG",
+        parsed.group("subject").decode(),
+        parsed.group("sid").decode(),
+        parsed.group("payload"),
+    )
+    _ = int(parsed.group("numbytes").decode())
     reply_to = parsed.group("reply")
     if reply_to is not None:
-        msg_content["reply-to"] = reply_to
-
-    return msg_content
+        msg.reply_to = reply_to
+    buf = buf[parsed.end() :]
+    print(buf)
+    return msg
 
 
 def parseHmsg(body: bytes) -> dict:
