@@ -8,11 +8,16 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 import pynats
 
+def printMsg(msg):
+    print(f"GOT MESSAGE: {msg}")
+
+
 def main():
     a = pynats.NATSClient("localhost", 4222)    
     a.start()
-    a.subscibe("TEST")
-    a.send("TEST", b"test message")
+    a.addCallback(printMsg)
+    a.subscibe("FOO")
+    a.send("FOO", b"Hello NATS!", {"Bar": "Baz", "a": "b"})
     time.sleep(10)
     a.unsubscribe("TEST")
     time.sleep(2)

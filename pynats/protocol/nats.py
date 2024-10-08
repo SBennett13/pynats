@@ -1,9 +1,9 @@
-"""Implementation of the logic side of the NATS protocol
-"""
+"""Implementation of the logic side of the NATS protocol"""
 
 from dataclasses import dataclass, field
 from queue import Empty
 from threading import Event, Thread
+from typing import Callable
 from uuid import uuid4
 import contextlib
 
@@ -75,7 +75,7 @@ class Protocol(Thread):
         self.use_tls = use_tls
         self.got_connect = connected
         self.__close_event = Event()
-    
+
         # Params from the server
         self.info_options: InfoOptions = None
 
@@ -85,39 +85,45 @@ class Protocol(Thread):
             b"PING": self.handleProtocolPing,
             b"HMSG": self.handleProtocolHmsg,
             b"MSG": self.handleProtocolMsg,
+            b"OK": self.handleProtocolOk,
         }
 
         # Map of subject to sub id
         self.subscriptions: dict[str, str] = {}
 
+        self.callbacks: list = []
+
     def close(self):
         self.__close_event.set()
-    
-    def run(self):
 
+    def run(self):
         self.transport.start()
 
         exit_loop = self.__close_event.is_set
-        getMsg = self.transport.recv_queue.get_nowait
+        getMsg = self.transport.recv_queue.get
         doneMsg = self.transport.recv_queue.task_done
         suppressEmpty = contextlib.suppress(Empty)
         while not exit_loop():
             with suppressEmpty:
-                data: wire.Message = getMsg()
+                data: wire.Message = getMsg(timeout=0.01)
                 doneMsg()
 
                 # No matter what, there should be a handler
                 if data._type not in self.protocol_handlers:
-                    print(f"Unrecognized protocol message: {data._types}")
+                    print(f"Unrecognized protocol message: {data._type}")
                     continue
                 self.protocol_handlers[data._type](data)
 
         print("Ending NATS Protocol")
         self.transport.close()
 
-    def send(self, subject: str, payload: bytes, reply_to: str) -> None:
-        msg_b = wire.buildPub(subject, payload, reply_to)
-        print("Queueing PUB")
+    def send(self, subject: str, payload: bytes, headers: dict, reply_to: str) -> None:
+        msg_b = (
+            wire.buildPub(subject, payload, reply_to)
+            if not headers
+            else wire.buildHpub(subject, payload, headers, reply_to)
+        )
+        print("Queueing (H)PUB")
         self.transport.send_queue.put(msg_b)
 
     def sub(self, subject: str, queue_group: str = None) -> bool:
@@ -126,7 +132,8 @@ class Protocol(Thread):
 
         sid = createSubId()
         sub_b = wire.buildSub(subject, sid, queue_group)
-        self.transport.send_queue.put(sub_b)
+        print(f"Subbing to {subject} with sid {sid}")
+        self.transport.send_queue.put(sub_b, timeout=0.1)
         self.subscriptions[subject] = sid
         return True
 
@@ -139,12 +146,15 @@ class Protocol(Thread):
         self.transport.send_queue.put(unsub_b)
         return True
 
+    def addCB(self, callback: Callable) -> None:
+        self.callbacks.append(callback)
+
     # ---------------------------
     # Protocol type handlers
     # ---------------------------
     def handleProtocolInfo(self, msg: wire.InfoMessage) -> None:
         self.info_options = InfoOptions.build(msg.options)
-
+        print(self.info_options)
         # Verify some info
         if self.info_options.auth_required and (
             any((not self.user, not self.password, not self.auth_token))
@@ -156,9 +166,10 @@ class Protocol(Thread):
         connect_options = {
             "lang": "py",
             "version": self.info_options.version,
-            "verbose": False,
+            "verbose": True,
             "pedantic": False,
             "tls_required": self.use_tls,
+            "headers": True,
         }
         if self.info_options.auth_required:
             connect_options["user"] = self.user
@@ -175,12 +186,15 @@ class Protocol(Thread):
         pong_msg = wire.build_pong()
         self.transport.send_queue.put(pong_msg)
 
-    def handleProtocolMsg(self, body_b: bytes) -> None:
+    def handleProtocolMsg(self, msg: wire.MsgMessage) -> None:
         print("Received MSG")
-        content = wire.parseMsg(body_b)
-        print(f"MSG CONTENT: {content}")
+        for callback in self.callbacks:
+            callback(msg)
 
-    def handleProtocolHmsg(self, body_b: bytes) -> None:
+    def handleProtocolHmsg(self, msg: wire.HmsgMessage) -> None:
         print("Received HMSG")
-        content = wire.parseHmsg(body_b)
-        print(f"HMSG Content: {content}")
+        for callback in self.callbacks:
+            callback(msg)
+
+    def handleProtocolOk(self, msg: wire.Message) -> None:
+        print("Got +OK")

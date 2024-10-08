@@ -2,6 +2,7 @@
 
 from queue import Queue
 from threading import Event
+from typing import Callable
 import pynats.protocol.nats as nats_protocol
 import pynats.transport as transport
 
@@ -33,7 +34,9 @@ class NATSClient:
         self.__nats_protocol.close()
         self.__nats_protocol.join()
 
-    def send(self, subject: str, payload: bytes, reply_to: str = None) -> None:
+    def send(
+        self, subject: str, payload: bytes, header: dict = None, reply_to: str = None
+    ) -> None:
         if not (
             isinstance(subject, str)
             and isinstance(payload, bytes)
@@ -42,7 +45,20 @@ class NATSClient:
             print("'subject' must be a string and 'payload' must be bytes")
             return
 
-        self.__nats_protocol.send(subject, payload, reply_to)
+        if header is not None and not self.__nats_protocol.info_options.headers:
+            print(
+                "Headers were provided, but the server indicated that it doesn't want headers"
+            )
+            print("Dropping headers and sending message")
+            header = None
+
+        self.__nats_protocol.send(subject, payload, header, reply_to)
+
+    def addCallback(self, callback: Callable) -> bool:
+        if not isinstance(callback, Callable):
+            return False
+        self.__nats_protocol.addCB(callback)
+        return True
 
     def subscibe(self, subject: str, queue_group: str = None):
         self.__nats_protocol.sub(subject, queue_group)
