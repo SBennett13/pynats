@@ -32,10 +32,12 @@ RE_INFO_MSG = re.compile(
 )
 
 RE_MSG_BODY = re.compile(
-    rb"MSG[ \t]{1,}(?P<subject>[a-zA-Z0-9_\.]{1,})[ \t]{1,}(?P<sid>\w{1,})[ \t]{1,}((?P<reply>[a-zA-Z0-9\._]{1,})[ \t]{1,}){0,1}(?P<numbytes>[0-9]{1,})\r\n(?P<payload>.{0,}){0,1}\r\n",
+    rb"MSG[ \t]{1,}(?P<subject>[\w\.]{1,})[ \t]{1,}(?P<sid>[\w\.]{1,})[ \t]{1,}((?P<reply>[\w\.]{1,})[ \t]{1,}){0,1}(?P<numbytes>[0-9]{1,})\r\n(?P<payload>.{0,}){0,1}\r\n",
+    re.ASCII,
 )
 RE_HMSG_BODY = re.compile(
-    rb"HMSG[ \t]{1,}(?P<subject>[a-zA-Z0-9_\.]{1,})[ \t]{1,}(?P<sid>\w{1,})[ \t]{1,}((?P<reply>[a-zA-Z0-9\._]{1,})[ \t]{1,}){0,1}(?P<numhdrbytes>[0-9]{1,})[ \t]{1,}(?P<numbytes>[0-9]{1,})\r\nNATS/1\.0\r\n(?P<hdr>([\w.]{1,}: [\w.]{1,}\r\n){1,})\r\n(?P<payload>.{0,}){0,1}\r\n",
+    rb"HMSG[ \t]{1,}(?P<subject>[\w\.]{1,})[ \t]{1,}(?P<sid>[\w\.]{1,})[ \t]{1,}((?P<reply>[\w\.]{1,})[ \t]{1,}){0,1}(?P<numhdrbytes>[0-9]{1,})[ \t]{1,}(?P<numbytes>[0-9]{1,})\r\nNATS/1\.0\r\n(?P<hdr>([\w.]{1,}: [\w.]{1,}\r\n){1,})\r\n(?P<payload>.{0,}){0,1}\r\n",
+    re.ASCII,
 )
 
 
