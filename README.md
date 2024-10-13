@@ -2,5 +2,5 @@
 
 ## TODO
 
-- SSL/TLS Support
+- Test credential auth
 - Jetstream (?)

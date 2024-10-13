@@ -1,15 +1,16 @@
 """Implementation of the logic side of the NATS protocol"""
 
+import contextlib
+import ssl
 from dataclasses import dataclass, field
 from queue import Empty
 from threading import Event, Thread
-from typing import Callable
+from typing import Callable, Optional
 from uuid import uuid4
-import contextlib
 
-from pynats.transport import Transport
 import pynats.error as exceptions
 import pynats.protocol.wire as wire
+from pynats.transport import Transport
 
 
 def createSubId() -> str:
@@ -61,20 +62,26 @@ class Protocol(Thread):
     def __init__(
         self,
         transport: Transport,
-        user: str = "",
-        password: str = "",
-        auth_token: str = "",
-        use_tls: bool = False,
-        connected: Event = None,
+        user: Optional[str] = "",
+        password: Optional[str] = "",
+        auth_token: Optional[str] = "",
+        tls: Optional[ssl.SSLContext] = None,
+        connected: Optional[Event] = None,
     ) -> None:
         super().__init__()
         self.transport = transport
         self.user = user
         self.password = password
         self.auth_token = auth_token
-        self.use_tls = use_tls
+        self.tls = tls
         self.got_connect = connected
         self.__close_event = Event()
+
+        if not isinstance(tls, ssl.SSLContext):
+            print(
+                "'tls' argument should be an ssl.SSLContext to use to upgrade the socket. Setting 'tls' to None"
+            )
+            self.tls = None
 
         # Params from the server
         self.info_options: InfoOptions = None
@@ -86,6 +93,7 @@ class Protocol(Thread):
             b"HMSG": self.handleProtocolHmsg,
             b"MSG": self.handleProtocolMsg,
             b"OK": self.handleProtocolOk,
+            b"ERR": self.handleProtocolErr,
         }
 
         # Map of subject to sub id
@@ -168,13 +176,21 @@ class Protocol(Thread):
             "version": self.info_options.version,
             "verbose": True,
             "pedantic": False,
-            "tls_required": self.use_tls,
+            "tls_required": self.tls is not None,
             "headers": True,
         }
+
         if self.info_options.auth_required:
             connect_options["user"] = self.user
             connect_options["pass"] = self.password
             connect_options["auth_token"] = self.auth_token
+
+        if self.info_options.tls_required:
+            if self.tls is None:
+                raise RuntimeError(
+                    "Server indicated TLS is required and not SSL Context was provided"
+                )
+            self.transport.wrap_socket(self.tls)
 
         connect_wire: bytes = wire.build_connect(connect_options)
         print("Sending connect")
@@ -198,3 +214,6 @@ class Protocol(Thread):
 
     def handleProtocolOk(self, msg: wire.Message) -> None:
         print("Got +OK")
+
+    def handleProtocolErr(self, msg: wire.ErrMessage) -> None:
+        print(f"Got -ERR: {msg.error_message}")

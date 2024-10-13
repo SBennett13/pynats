@@ -39,6 +39,7 @@ RE_HMSG_BODY = re.compile(
     rb"HMSG[ \t]{1,}(?P<subject>[\w\.]{1,})[ \t]{1,}(?P<sid>[\w\.]{1,})[ \t]{1,}((?P<reply>[\w\.]{1,})[ \t]{1,}){0,1}(?P<numhdrbytes>[0-9]{1,})[ \t]{1,}(?P<numbytes>[0-9]{1,})\r\nNATS/1\.0\r\n(?P<hdr>([\w.]{1,}: [\w.]{1,}\r\n){1,})\r\n(?P<payload>.{0,}){0,1}\r\n",
     re.ASCII,
 )
+RE_ERR_BODY = re.compile(rb"-ERR (?P<msg>.{1,})[ \t]{0,}\r\n", re.ASCII)
 
 
 @dataclasses.dataclass
@@ -68,6 +69,11 @@ class HmsgMessage(Message):
     reply_to: str = ""
 
 
+@dataclasses.dataclass
+class ErrMessage(Message):
+    error_message: str
+
+
 def parse_stream(buf: bytearray, putMsg):
     msg_type_match = RE_MESSAGE_TYPE.match(buf)
     if msg_type_match is None:
@@ -84,6 +90,10 @@ def parse_stream(buf: bytearray, putMsg):
     elif msg_type == b"+OK":
         putMsg(Message(b"OK"))
         return msg_type_match.end()
+    elif msg_type == b"-ERR":
+        err_msg, byte_len = parse_err(buf)
+        putMsg(err_msg)
+        return byte_len
     elif msg_type == b"PING":
         msg = Message(msg_type)
         putMsg(msg)
@@ -96,6 +106,13 @@ def parse_stream(buf: bytearray, putMsg):
         msg, byte_len = parseHmsg(buf)
         putMsg(msg)
         return byte_len
+
+
+def parse_err(buf: bytearray) -> Union[ErrMessage, None]:
+    error_msg = RE_ERR_BODY.match(buf, 0)
+    if error_msg is not None:
+        return ErrMessage("ERR", error_msg.group("msg").decode()), error_msg.end()
+    return None, None
 
 
 def parse_info(buf: bytearray) -> Union[Message, None]:

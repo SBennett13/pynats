@@ -1,0 +1,15 @@
+services:
+  nats:
+    image: "nats:latest"
+    env_file:
+      - "./.env"
+    container_name: "nats-server"
+    ports:
+      - 4222:4222
+      - 6222:6222
+      - 8222:8222
+    volumes:
+      - "./server-cert.pem:/tmp/server-cert.pem"
+      - "./server-key.pem:/tmp/server-key.pem"
+      - "$CAROOT:/tmp/ca-file.pem"
+      - "./nats-server.conf:/nats-server.conf"

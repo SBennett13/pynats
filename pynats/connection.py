@@ -1,8 +1,10 @@
 """Connection wrapper for NATS protocol client"""
 
+import ssl
 from queue import Queue
 from threading import Event
-from typing import Callable
+from typing import Callable, Optional
+
 import pynats.protocol.nats as nats_protocol
 import pynats.transport as transport
 
@@ -12,17 +14,17 @@ class NATSClient:
         self,
         host: str,
         port: int,
-        user: str = "",
-        password: str = "",
-        auth_token: str = "",
-        use_tls: bool = False,
+        user: Optional[str] = "",
+        password: Optional[str] = "",
+        auth_token: Optional[str] = "",
+        tls: Optional[ssl.SSLContext] = None,
     ) -> None:
         recv_queue = Queue(50)
         send_queue = Queue(50)
         self.connected = Event()
         self.__transport = transport.Transport(host, port, recv_queue, send_queue)
         self.__nats_protocol = nats_protocol.Protocol(
-            self.__transport, user, password, auth_token, use_tls, self.connected
+            self.__transport, user, password, auth_token, tls, self.connected
         )
 
     def start(self) -> None:
