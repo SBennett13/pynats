@@ -14,6 +14,7 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Programming Language :: Python",
 ]
+readme = "README.md"
 
 [tool.setuptools]
 zip-safe = true
