@@ -27,7 +27,7 @@ def main():
     if rootCA:
         ssl_ctx.load_verify_locations(rootCA)
     ssl_ctx.check_hostname = True
-    a = pynats.NATSClient("localhost", 4222, tls=ssl_ctx)
+    a = pynats.NATSClient("localhost", 4222, user="a", password="b", tls=ssl_ctx)
     a.start()
     time.sleep(2)
     a.addCallback(printMsg)

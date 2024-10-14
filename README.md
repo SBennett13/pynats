@@ -2,5 +2,4 @@
 
 ## TODO
 
-- Test credential auth
 - Jetstream (?)

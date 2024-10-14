@@ -6,23 +6,19 @@ build-backend = "setuptools.build_meta"
 name = "pynats"
 version = "0.0.1"
 requires-python = ">=3.8"
-authors = [
-    {name = "Scott Bennett", email = "scottbennett027@gmail.com"}
-]
-maintainers = [
-    {name = "Scott Bennett", email = "scottbennett027@gmail.com"}
-]
+authors = [{ name = "Scott Bennett", email = "scottbennett027@gmail.com" }]
+maintainers = [{ name = "Scott Bennett", email = "scottbennett027@gmail.com" }]
 description = "Synchronous implementation of the NATS Client protocol for messaging."
 keywords = ["nats", "messaging", "IPC"]
 classifiers = [
     "Development Status :: 4 - Beta",
-    "Programming Language :: Python"
+    "Programming Language :: Python",
 ]
 
 [tool.setuptools]
 zip-safe = true
 
 [tool.setuptools.packages.find]
-include = ["pynats*"]
+include = ["pynats", "pynats.protocol"]
 exclude = ["test"]
 namespaces = false

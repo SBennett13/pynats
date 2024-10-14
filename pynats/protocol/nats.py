@@ -8,7 +8,6 @@ from threading import Event, Thread
 from typing import Callable, Optional
 from uuid import uuid4
 
-import pynats.error as exceptions
 import pynats.protocol.wire as wire
 from pynats.transport import Transport
 
@@ -162,15 +161,6 @@ class Protocol(Thread):
     # ---------------------------
     def handleProtocolInfo(self, msg: wire.InfoMessage) -> None:
         self.info_options = InfoOptions.build(msg.options)
-        print(self.info_options)
-        # Verify some info
-        if self.info_options.auth_required and (
-            any((not self.user, not self.password, not self.auth_token))
-        ):
-            raise exceptions.AuthException(
-                "Server indicated authentication is required but no authentication parameters were provided."
-            )
-
         connect_options = {
             "lang": "py",
             "version": self.info_options.version,
@@ -179,11 +169,15 @@ class Protocol(Thread):
             "tls_required": self.tls is not None,
             "headers": True,
         }
-
+        # Verify some info
         if self.info_options.auth_required:
-            connect_options["user"] = self.user
-            connect_options["pass"] = self.password
-            connect_options["auth_token"] = self.auth_token
+            if self.user and self.password:
+                print("Authenticating with user and pass")
+                connect_options["user"] = self.user
+                connect_options["pass"] = self.password
+            if self.auth_token:
+                print("Authenticating with auth token")
+                connect_options["auth_token"] = self.auth_token
 
         if self.info_options.tls_required:
             if self.tls is None:

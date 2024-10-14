@@ -10,21 +10,18 @@ from ssl import SSLContext, SSLError
 
 import pynats.protocol.wire as wire
 
-import time
 
 class Transport:
     def __init__(self, host: str, port: int, queue: Queue, send_queue: Queue) -> None:
-        self.__socket = None
+        self.__socket: socket.socket = None
         self.__host = host
         self.__port = port
-        self.__rcv_thread = None
-        self._send_buf_thread = None
         self.__close_pipe_r = os.pipe()
         self.__close_pipe_w = os.pipe()
         self.__exit_event = threading.Event()
 
-        self._send_buf_thread = None
-        self.__rcv_thread = None
+        self.__send_thread: threading.Thread = None
+        self.__rcv_thread: threading.Thread = None
 
         self.recv_queue = queue
         self.send_queue = send_queue
@@ -42,7 +39,7 @@ class Transport:
         os.write(self.__close_pipe_r[1], b"x")
         os.write(self.__close_pipe_w[1], b"x")
         self.__rcv_thread.join()
-        self._send_buf_thread.join()
+        self.__send_thread.join()
         self.__socket.shutdown(socket.SHUT_RDWR)
         self.__socket.close()
 
@@ -50,15 +47,15 @@ class Transport:
         self.__rcv_thread = threading.Thread(target=self.__thread_socketread)
         self.__rcv_thread.start()
 
-        self._send_buf_thread = threading.Thread(target=self.__thread_sendbuf)
-        self._send_buf_thread.start()
+        self.__send_thread = threading.Thread(target=self.__thread_sendbuf)
+        self.__send_thread.start()
 
     def wrap_socket(self, ssl_context: SSLContext):
         print("Closing read and write threads to upgrade socket")
         os.write(self.__close_pipe_r[1], b"x")
         os.write(self.__close_pipe_w[1], b"x")
         self.__rcv_thread.join()
-        self._send_buf_thread.join()
+        self.__send_thread.join()
         self.__socket = ssl_context.wrap_socket(
             self.__socket, server_hostname=self.__host, do_handshake_on_connect=False
         )
@@ -98,7 +95,6 @@ class Transport:
         print("Exiting send thread")
 
     def __thread_socketread(self):
-        sock = self.__socket
         pipe = self.__close_pipe_r[0]
         ex = self.__exit_event
         put_queue = self.recv_queue.put
@@ -106,7 +102,7 @@ class Transport:
 
         while not ex.is_set():
             try:
-                r, _, e = select.select([self.__socket, pipe], [], [], 10)
+                r, _, e = select.select([self.__socket, pipe], [], [self.__socket], 10)
 
                 if e:
                     print("THIS IS BAD")
@@ -115,7 +111,7 @@ class Transport:
                     with os.fdopen(pipe) as fd:
                         fd.read(1)
                     break
-                if sock in r:
+                if self.__socket in r:
                     data = self.__socket.recv(1024)
                     recv_buf.extend(data)
                 while recv_buf:
