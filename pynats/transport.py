@@ -67,7 +67,7 @@ class Transport:
         try:
             self.__socket.do_handshake(True)
         except SSLError as e:
-            print(f"SSL ERROR: {e}")
+            self._logger.error(f"SSL ERROR: {e}")
 
         self.__close_pipe_r = os.pipe()
         self.__close_pipe_w = os.pipe()
