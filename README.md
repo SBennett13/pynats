@@ -2,4 +2,5 @@
 
 ## TODO
 
+- Mailbox concepts
 - Jetstream (?)
