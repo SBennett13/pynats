@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import logging
 import os
 import ssl
 import sys
@@ -17,6 +18,9 @@ def printMsg(msg):
 
 
 def main():
+    _ = logging.getLogger("pynats")
+    _.setLevel(logging.DEBUG)
+    _.addHandler(logging.StreamHandler(sys.stdout))
     ssl_ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
     # ssl_ctx.minimum_version = ssl.PROTOCOL_TLSv1_2
     ssl_ctx.load_cert_chain(

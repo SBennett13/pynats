@@ -1,6 +1,7 @@
 """Implementation of the logic side of the NATS protocol"""
 
 import contextlib
+import logging
 import ssl
 from dataclasses import dataclass, field
 from queue import Empty
@@ -75,9 +76,9 @@ class Protocol(Thread):
         self.tls = tls
         self.got_connect = connected
         self.__close_event = Event()
-
+        self._logger = logging.getLogger("pynats.protocol.nats")
         if not isinstance(tls, ssl.SSLContext):
-            print(
+            self._logger.warning(
                 "'tls' argument should be an ssl.SSLContext to use to upgrade the socket. Setting 'tls' to None"
             )
             self.tls = None
@@ -117,11 +118,11 @@ class Protocol(Thread):
 
                 # No matter what, there should be a handler
                 if data._type not in self.protocol_handlers:
-                    print(f"Unrecognized protocol message: {data._type}")
+                    self._logger.warning(f"Unrecognized protocol message: {data._type}")
                     continue
                 self.protocol_handlers[data._type](data)
 
-        print("Ending NATS Protocol")
+        self._logger.info("Ending NATS Protocol")
         self.transport.close()
 
     def send(self, subject: str, payload: bytes, headers: dict, reply_to: str) -> None:
@@ -130,7 +131,7 @@ class Protocol(Thread):
             if not headers
             else wire.buildHpub(subject, payload, headers, reply_to)
         )
-        print("Queueing (H)PUB")
+        self._logger.debug("Queueing (H)PUB")
         self.transport.send_queue.put(msg_b)
 
     def sub(self, subject: str, queue_group: str = None) -> bool:
@@ -139,7 +140,7 @@ class Protocol(Thread):
 
         sid = createSubId()
         sub_b = wire.buildSub(subject, sid, queue_group)
-        print(f"Subbing to {subject} with sid {sid}")
+        self._logger.debug("Subbing to %s with sid %s", subject, sid)
         self.transport.send_queue.put(sub_b, timeout=0.1)
         self.subscriptions[subject] = sid
         return True
@@ -172,11 +173,11 @@ class Protocol(Thread):
         # Verify some info
         if self.info_options.auth_required:
             if self.user and self.password:
-                print("Authenticating with user and pass")
+                self._logger.debug("Authenticating with user and pass")
                 connect_options["user"] = self.user
                 connect_options["pass"] = self.password
             if self.auth_token:
-                print("Authenticating with auth token")
+                self._logger.debug("Authenticating with auth token")
                 connect_options["auth_token"] = self.auth_token
 
         if self.info_options.tls_required:
@@ -187,27 +188,27 @@ class Protocol(Thread):
             self.transport.wrap_socket(self.tls)
 
         connect_wire: bytes = wire.build_connect(connect_options)
-        print("Sending connect")
+        self._logger.debug("Sending connect")
         self.transport.send_queue.put(connect_wire)
         self.got_connect.set()
 
     def handleProtocolPing(self, _) -> None:
-        print("Received PING, sending PONG")
+        self._logger.debug("Received PING, sending PONG")
         pong_msg = wire.build_pong()
         self.transport.send_queue.put(pong_msg)
 
     def handleProtocolMsg(self, msg: wire.MsgMessage) -> None:
-        print("Received MSG")
+        self._logger.debug("Received MSG")
         for callback in self.callbacks:
             callback(msg)
 
     def handleProtocolHmsg(self, msg: wire.HmsgMessage) -> None:
-        print("Received HMSG")
+        self._logger.debug("Received HMSG")
         for callback in self.callbacks:
             callback(msg)
 
     def handleProtocolOk(self, msg: wire.Message) -> None:
-        print("Got +OK")
+        self._logger.debug("Got +OK")
 
     def handleProtocolErr(self, msg: wire.ErrMessage) -> None:
-        print(f"Got -ERR: {msg.error_message}")
+        self._logger.debug("Got -ERR: %s", msg.error_message)

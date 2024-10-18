@@ -2,8 +2,11 @@
 
 import dataclasses
 import json
+import logging
 import re
 from typing import Union
+
+_logger = logging.getLogger("pynats.protocol.wire")
 
 MSG_TYPES = (
     b"INFO",
@@ -79,10 +82,11 @@ def parse_stream(buf: bytearray, putMsg):
     if msg_type_match is None:
         # If we found nothing, find the next \r\n and trim the front
         # first_end = buf.find(b"\r\n")
-        print("HELP ME PARSE")
+        _logger.debug("HELP ME PARSE")
         return 0
 
     msg_type = msg_type_match.group("cmd")
+    _logger.debug("Got %s message", msg_type)
     if msg_type == b"INFO":
         info_msg, byte_len = parse_info(buf)
         putMsg(info_msg)
@@ -123,7 +127,7 @@ def parse_info(buf: bytearray) -> Union[Message, None]:
             b"INFO", json.loads(info_opts.group("options"))
         ), info_opts.end()
     else:
-        print(f"HELP: {buf}")
+        _logger.error(f"HELP: {buf}")
         return None, None
 
 

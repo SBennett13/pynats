@@ -1,6 +1,7 @@
 """All transport related things for the NATS Protocol"""
 
 import contextlib
+import logging
 import os
 import select
 import socket
@@ -25,6 +26,7 @@ class Transport:
 
         self.recv_queue = queue
         self.send_queue = send_queue
+        self._logger = logging.getLogger("pynats.transport")
 
     def start(self) -> None:
         self.__socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -35,6 +37,7 @@ class Transport:
         self.__start_readwrite_threads()
 
     def close(self):
+        self._logger.debug("Setting exit event and writing to close pipes")
         self.__exit_event.set()
         os.write(self.__close_pipe_r[1], b"x")
         os.write(self.__close_pipe_w[1], b"x")
@@ -42,8 +45,10 @@ class Transport:
         self.__send_thread.join()
         self.__socket.shutdown(socket.SHUT_RDWR)
         self.__socket.close()
+        self._logger.info("Closed transport")
 
     def __start_readwrite_threads(self) -> None:
+        self._logger.debug("Starting read and write socket threads")
         self.__rcv_thread = threading.Thread(target=self.__thread_socketread)
         self.__rcv_thread.start()
 
@@ -51,7 +56,7 @@ class Transport:
         self.__send_thread.start()
 
     def wrap_socket(self, ssl_context: SSLContext):
-        print("Closing read and write threads to upgrade socket")
+        self._logger.debug("Closing read and write threads to upgrade socket")
         os.write(self.__close_pipe_r[1], b"x")
         os.write(self.__close_pipe_w[1], b"x")
         self.__rcv_thread.join()
@@ -66,10 +71,11 @@ class Transport:
 
         self.__close_pipe_r = os.pipe()
         self.__close_pipe_w = os.pipe()
-        print("Restarting read and write threads post SSL upgrade")
+        self._logger.debug("Restarting read and write threads post SSL upgrade")
         self.__start_readwrite_threads()
 
     def __thread_sendbuf(self):
+        debugLog = self._logger.debug
         getSend = self.send_queue.get
         getDone = self.send_queue.task_done
         ex_event = self.__exit_event.is_set
@@ -91,10 +97,12 @@ class Transport:
             if w and send_buf:
                 num_sent = self.__socket.send(bytes(send_buf))
                 send_buf = send_buf[num_sent:]
-
-        print("Exiting send thread")
+                debugLog("Sent %s bytes over socket from send buffer", num_sent)
+        self._logger.info("Finished send thread")
 
     def __thread_socketread(self):
+        debugLog = self._logger.debug
+        errorLog = self._logger.error
         pipe = self.__close_pipe_r[0]
         ex = self.__exit_event
         put_queue = self.recv_queue.put
@@ -105,9 +113,10 @@ class Transport:
                 r, _, e = select.select([self.__socket, pipe], [], [self.__socket], 10)
 
                 if e:
-                    print("THIS IS BAD")
+                    errorLog("THIS IS BAD")
 
                 if pipe in r:
+                    debugLog("Got message from OS pipe to leave thread.")
                     with os.fdopen(pipe) as fd:
                         fd.read(1)
                     break
@@ -116,13 +125,16 @@ class Transport:
                     recv_buf.extend(data)
                 while recv_buf:
                     bytes_processed = wire.parse_stream(recv_buf, put_queue)
+                    debugLog(
+                        "Processed %s bytes in the receive buffer", bytes_processed
+                    )
                     recv_buf = recv_buf[bytes_processed:]
                     if bytes_processed == 0 or not recv_buf:
                         break
 
             except socket.error as e:
-                print(f"SOCKET ERROR: {e}")
+                errorLog(f"SOCKET ERROR: {e}")
             except Full:
-                print("Queue was full, wtf?")
+                errorLog("Queue was full, wtf?")
 
-        print("Exiting socket read thread")
+        self._logger.info("Exiting socket read thread")
