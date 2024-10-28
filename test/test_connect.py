@@ -40,7 +40,7 @@ def main(log: bool):
     a.start()
     time.sleep(2)
     a.addCallback(printMsg)
-    a.subscibe("FOO.BAR")
+    a.subscribe("FOO.BAR")
     a.send("FOO.BAR", b"Hello NATS!", {"Bar": "Baz", "a": "b"})
     time.sleep(10)
     a.unsubscribe("TEST")
