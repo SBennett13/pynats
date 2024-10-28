@@ -69,7 +69,7 @@ class NATSClient:
         self.__nats_protocol.addCB(callback)
         return True
 
-    def subscibe(self, subject: str, queue_group: str = None):
+    def subscribe(self, subject: str, queue_group: str = None):
         self.__nats_protocol.sub(subject, queue_group)
 
     def unsubscribe(self, subject: str, messages_to_wait_for: int = 0):
