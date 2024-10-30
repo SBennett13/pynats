@@ -20,6 +20,8 @@ load_dotenv(os.path.join(os.path.abspath(os.path.dirname(__file__)), "config", "
 def printMsg(msg):
     print(f"GOT MESSAGE: {msg}")
 
+def foobarPrintMsg(msg):
+    print(f"GOT MESSAGE ON FOO.BAR CB: {msg}")
 
 def main(log: bool):
     if log:
@@ -36,14 +38,15 @@ def main(log: bool):
     if rootCA:
         ssl_ctx.load_verify_locations(rootCA)
     ssl_ctx.check_hostname = True
-    a = pynats.NATSClient("localhost", 4222, user="a", password="b", tls=ssl_ctx)
+    a = pynats.NATSClient("localhost", 4222, user="a", password="b", tls=ssl_ctx, callback=printMsg)
     a.start()
     time.sleep(2)
-    a.addCallback(printMsg)
+    cb_id = a.addCallback(foobarPrintMsg, "FOO.BAR")
     a.subscribe("FOO.BAR")
     a.send("FOO.BAR", b"Hello NATS!", {"Bar": "Baz", "a": "b"})
     time.sleep(10)
-    a.unsubscribe("TEST")
+    a.unsubscribe("FOO.BAR")
+    a.removeCallback(cb_id)
     time.sleep(2)
     a.close()
 

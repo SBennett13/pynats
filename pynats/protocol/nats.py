@@ -1,12 +1,13 @@
 """Implementation of the logic side of the NATS protocol"""
 
 import contextlib
+import itertools
 import logging
 import ssl
 from dataclasses import dataclass, field
 from queue import Empty
-from threading import Event, Thread
-from typing import Callable, Optional
+from threading import Event, Lock, Thread
+from typing import Callable, Dict, Optional
 from uuid import uuid4
 
 import pynats.protocol.wire as wire
@@ -99,7 +100,9 @@ class Protocol(Thread):
         # Map of subject to sub id
         self.subscriptions: dict[str, str] = {}
 
-        self.callbacks: list = []
+        # Empty string key is the catch all
+        self.callbacks: Dict[str : Dict[str, Callable]] = {"": {}}
+        self.callbacks_lock = Lock()
 
     def close(self):
         self.__close_event.set()
@@ -150,12 +153,36 @@ class Protocol(Thread):
         if sid is None:
             return False
 
+        self._logger.debug("Unsubbing from %s (id %s)", subject, sid)
+        with self.callbacks_lock:
+            if subject in self.callbacks and self.callbacks[subject]:
+                self._logger.warning("Unsubbing from %s, but there are still callbacks for it", subject)
         unsub_b = wire.buildUnsub(sid, max_msgs)
         self.transport.send_queue.put(unsub_b)
         return True
 
-    def addCB(self, callback: Callable) -> None:
-        self.callbacks.append(callback)
+    def addCB(self, callback: Callable, subject: str = "") -> str:
+        str_subject = str(subject)
+        with self.callbacks_lock:
+            if str_subject not in self.callbacks:
+                self.callbacks[str_subject] = {}
+            callback_id = createSubId()
+            self._logger.debug("Add callback %s to '%s'", callback_id, subject if subject else "default")
+            self.callbacks[str(subject)][callback_id] = callback
+            return callback_id
+
+    def removeCB(self, callback_id: str, subject: str = "") -> bool:
+        subject = str(subject)
+        with self.callbacks_lock:
+            if subject not in self.callbacks:
+                return False
+
+            if callback_id not in self.callbacks[subject]:
+                return False
+
+            self._logger.debug("Removing callback %s from '%s'", callback_id, subject if subject else "default")
+            self.callbacks[subject].pop(callback_id)
+            return True
 
     # ---------------------------
     # Protocol type handlers
@@ -182,9 +209,7 @@ class Protocol(Thread):
 
         if self.info_options.tls_required:
             if self.tls is None:
-                raise RuntimeError(
-                    "Server indicated TLS is required and not SSL Context was provided"
-                )
+                raise RuntimeError("Server indicated TLS is required and not SSL Context was provided")
             self.transport.wrap_socket(self.tls)
 
         connect_wire: bytes = wire.build_connect(connect_options)
@@ -199,15 +224,23 @@ class Protocol(Thread):
 
     def handleProtocolMsg(self, msg: wire.MsgMessage) -> None:
         self._logger.debug("Received MSG")
-        for callback in self.callbacks:
-            callback(msg)
+        with self.callbacks_lock:
+            [
+                cb(msg)
+                for cb in [*self.callbacks.get(msg.subject, {}).values(), *self.callbacks[""].values()]
+                if cb is not None
+            ]
 
     def handleProtocolHmsg(self, msg: wire.HmsgMessage) -> None:
         self._logger.debug("Received HMSG")
-        for callback in self.callbacks:
-            callback(msg)
+        with self.callbacks_lock:
+            [
+                cb(msg)
+                for cb in [*self.callbacks.get(msg.subject, {}).values(), *self.callbacks[""].values()]
+                if cb is not None
+            ]
 
-    def handleProtocolOk(self, msg: wire.Message) -> None:
+    def handleProtocolOk(self, _: wire.Message) -> None:
         self._logger.debug("Got +OK")
 
     def handleProtocolErr(self, msg: wire.ErrMessage) -> None:
